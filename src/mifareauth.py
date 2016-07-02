@@ -105,8 +105,11 @@ class NFCReader(object):
             raise IOError("NFC Error whilst polling")
         elif res >= 1:
             uid = None
-            if nt.nti.nai.szUidLen == 4:
-                uid = "".join([chr(nt.nti.nai.abtUid[i]) for i in range(4)])
+            if nt.nti.nai.szUidLen >= 1:
+                try:
+                    uid = "".join([chr(nt.nti.nai.abtUid[i]) for i in range(nt.nti.nai.szUidLen)])
+                except IndexError:
+                    raise IndexError("ERROR: index outside the range of nt.nti.nai.abtUid!")
             if uid:
                 if not ((self._card_uid and self._card_present and uid == self._card_uid) and \
                                     time.mktime(time.gmtime()) <= self._card_last_seen + self.card_timeout):
