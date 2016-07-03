@@ -81,7 +81,7 @@ class NFCReader(object):
 
                 finally:
                     self.log("Nothing in this finally clause --Kiki")
-                    # nfc.nfc_close(self.__device)
+                    nfc.nfc_close(self.__device)
             else:
                 self.log("NFC Waiting for device.")
                 time.sleep(self.card_timeout)
@@ -97,7 +97,7 @@ class NFCReader(object):
         finally:
             nfc.nfc_exit(self.__context)
             self.log("NFC Clean shutdown called")
-        self.log("Kiki: run is done, ID: ", self._card_uid)
+        self.log("run() is done, ID: ", self._card_uid)
         return loop
 
     @staticmethod
@@ -136,15 +136,15 @@ class NFCReader(object):
                          uid == self._card_uid) and
                          time.mktime(time.gmtime()) <= self._card_last_seen + self.card_timeout):
                     self._setup_device()
-                    # self.read_card(uid) # -Kiki
-            self.log("Kiki: ID: ", uid)
+                    # self.read_card(uid) # Remove the read -- don't need it, and it spews to the screen
             self._card_uid = uid.encode("hex")
+            self.log("ID: ", uid.encode("hex"))
             self._card_present = True
             self._card_last_seen = time.mktime(time.gmtime())
         else: # ASSERT: res == 0
             self._card_present = False
             self._clean_card()
-        self.log("Kiki: Done _poll_loop, found ID: ", self._card_uid )
+        self.log("Done _poll_loop, found ID: ", self._card_uid )
 
     def _clean_card(self):
         self._card_uid = None
