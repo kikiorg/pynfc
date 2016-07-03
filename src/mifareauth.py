@@ -33,7 +33,10 @@ class NFCReader(object):
     MC_AUTH_B = 0x61
     MC_READ = 0x30
     MC_WRITE = 0xA0
-    card_timeout = 10
+    NUM_OF_POLLS = 1 # Number of times it should poll for a card
+    PERIOD_BW_POLLS = 1 # Periods between polls, in units of 150ms - eg 2 = 300ms
+    card_timeout = 0.25 # Wait for this many seconds for the reader to respond, or to wait for another poll
+#    card_timeout = 10
 
     def __init__(self, logger):
         self.__context = None
@@ -52,7 +55,7 @@ class NFCReader(object):
             self.__modulations[i].nmt = mods[i][0]
             self.__modulations[i].nbr = mods[i][1]
 
-    def run(self):
+    def run(self, wait_for_clear = False):
         """Starts the looping thread"""
         self.__context = ctypes.pointer(nfc.nfc_context())
         nfc.nfc_init(ctypes.byref(self.__context))
@@ -65,15 +68,26 @@ class NFCReader(object):
                 self.__device = nfc.nfc_open(self.__context, conn_strings[0])
                 try:
                     _ = nfc.nfc_initiator_init(self.__device)
-                    while True:
+                    # Wait until the reader has no card nearby
+                    if wait_for_clear:
                         self._poll_loop()
+                        while not self._card_uid == None:
+                            self._poll_loop()
+                    while not self._card_uid:
+                        self._poll_loop()
+                except (KeyboardInterrupt, SystemExit):
+                    loop = False
+                    self._clean_card()
+
                 finally:
-                    nfc.nfc_close(self.__device)
+                    self.log("Nothing in this finally clause --Kiki")
+                    # nfc.nfc_close(self.__device)
             else:
                 self.log("NFC Waiting for device.")
-                time.sleep(5)
+                time.sleep(self.card_timeout)
         except (KeyboardInterrupt, SystemExit):
             loop = False
+            self._clean_card()
         except IOError, e:
             self.log("Exception: " + str(e))
             loop = True  # not str(e).startswith("NFC Error whilst polling")
@@ -83,22 +97,28 @@ class NFCReader(object):
         finally:
             nfc.nfc_exit(self.__context)
             self.log("NFC Clean shutdown called")
+        self.log("Kiki: run is done, ID: ", self._card_uid)
         return loop
 
     @staticmethod
     def _sanitize(bytesin):
         """Returns guaranteed ascii text from the input bytes"""
+        # Used for converting raw byte data to a string.  If the byte isn't a tame ASCII character, use . instead.
         return "".join([x if 0x7f > ord(x) > 0x1f else '.' for x in bytesin])
 
     @staticmethod
     def _hashsanitize(bytesin):
         """Returns guaranteed hexadecimal digits from the input bytes"""
+        # Used for converting raw byte data into a hex string.  If the byte isn't a hex digit, use nothing instead.
         return "".join([x if x.lower() in 'abcdef0123456789' else '' for x in bytesin])
 
     def _poll_loop(self):
         """Starts a loop that constantly polls for cards"""
         nt = nfc.nfc_target()
-        res = nfc.nfc_initiator_poll_target(self.__device, self.__modulations, len(self.__modulations), 10, 2,
+        #res = nfc.nfc_initiator_poll_target(self.__device, self.__modulations, len(self.__modulations), 10, 2,
+        #                                    ctypes.byref(nt))
+        res = nfc.nfc_initiator_poll_target(self.__device, self.__modulations, len(self.__modulations),
+                                            NFCReader.NUM_OF_POLLS, NFCReader.PERIOD_BW_POLLS,
                                             ctypes.byref(nt))
         # print "RES", res
         if res < 0:
@@ -111,16 +131,20 @@ class NFCReader(object):
                 except IndexError:
                     raise IndexError("ERROR: index outside the range of nt.nti.nai.abtUid!")
             if uid:
-                if not ((self._card_uid and self._card_present and uid == self._card_uid) and \
-                                    time.mktime(time.gmtime()) <= self._card_last_seen + self.card_timeout):
+                if not ((self._card_uid and
+                         self._card_present and
+                         uid == self._card_uid) and
+                         time.mktime(time.gmtime()) <= self._card_last_seen + self.card_timeout):
                     self._setup_device()
-                    self.read_card(uid)
-            self._card_uid = uid
+                    # self.read_card(uid) # -Kiki
+            self.log("Kiki: ID: ", uid)
+            self._card_uid = uid.encode("hex")
             self._card_present = True
             self._card_last_seen = time.mktime(time.gmtime())
-        else:
+        else: # ASSERT: res == 0
             self._card_present = False
             self._clean_card()
+        self.log("Kiki: Done _poll_loop, found ID: ", self._card_uid )
 
     def _clean_card(self):
         self._card_uid = None
